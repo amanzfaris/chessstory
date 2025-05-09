@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Simple Chess Game</title>
+    <link rel="stylesheet" href="game-styles.css">
+</head>
+<body>
+    <div class="particles">
+        <!-- Add 10 particles -->
+        <div class="particle" style="left: 10%; animation-delay: 0s;"></div>
+        <div class="particle" style="left: 20%; animation-delay: 1s;"></div>
+        <div class="particle" style="left: 30%; animation-delay: 2s;"></div>
+        <div class="particle" style="left: 40%; animation-delay: 3s;"></div>
+        <div class="particle" style="left: 50%; animation-delay: 4s;"></div>
+        <div class="particle" style="left: 60%; animation-delay: 5s;"></div>
+        <div class="particle" style="left: 70%; animation-delay: 6s;"></div>
+        <div class="particle" style="left: 80%; animation-delay: 7s;"></div>
+        <div class="particle" style="left: 90%; animation-delay: 8s;"></div>
+        <div class="particle" style="left: 95%; animation-delay: 9s;"></div>
+    </div>
+    <div class="vignette"></div>
+    
+    <!-- Add game setup modal -->
+    <div class="game-setup-modal" id="gameSetupModal">
+        <div class="setup-content">
+            <h2>Chess Game Setup</h2>
+            <div class="setup-option">
+                <label>Choose your color:</label>
+                <div class="color-options">
+                    <label>
+                        <input type="radio" name="playerColor" value="white" checked>
+                        <span class="color-choice white">♔</span>
+                        <span>White</span>
+                    </label>
+                    <label>
+                        <input type="radio" name="playerColor" value="black">
+                        <span class="color-choice black">♚</span>
+                        <span>Black</span>
+                    </label>
+                </div>
+            </div>
+            <div class="setup-option">
+                <label>Computer difficulty:</label>
+                <select id="difficultySelect">
+                    <option value="1">Easy</option>
+                    <option value="2" selected>Medium</option>
+                    <option value="3">Hard</option>
+                </select>
+            </div>
+            <button id="startGameBtn">Start Game</button>
+        </div>
+    </div>
+    
+    <div class="chessboard" style="display: none;"></div>
+    <div class="game-controls" style="display: none;">
+        <button onclick="undoMove()">Undo</button>
+        <button onclick="resetGame()">Restart</button>
+    </div>
+    
+    <!-- Change the Chess.js import to use a specific version -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+    <script>
+        // Test Chess.js is working
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log("Testing Chess.js library:");
+            try {
+                const testGame = new Chess();
+                console.log("Chess.js initialized successfully");
+                console.log("Starting position FEN:", testGame.fen());
+                console.log("Legal moves:", testGame.moves());
+            } catch (error) {
+                console.error("Chess.js error:", error);
+            }
+        });
+    </script>
+    <script>
+        // Include the JavaScript code directly in the HTML file to ensure it works
+        let board = null;
+        let game = new Chess();
+        let selectedSquare = null;
+        let isComputerTurn = false; // Track if it's computer's turn
+        
+        // Game settings
+        let computerLevel = 2;
+        let playerColor = 'white'; // Default player color
+        let computerColor = 'black'; // Default computer color
+        
+        // Initialize the game
+        document.addEventListener('DOMContentLoaded', function() {
+            // Show setup modal on page load
+            const setupModal = document.getElementById('gameSetupModal');
+            setupModal.style.display = 'flex';
+            
+            // Handle start game button
+            document.getElementById('startGameBtn').addEventListener('click', function() {
+                // Get selected color
+                const colorInputs = document.getElementsByName('playerColor');
+                for (const input of colorInputs) {
+                    if (input.checked) {
+                        playerColor = input.value;
+                        computerColor = playerColor === 'white' ? 'black' : 'white';
+                        break;
+                    }
+                }
+                
+                // Get selected difficulty
+                computerLevel = parseInt(document.getElementById('difficultySelect').value);
+                
+                // Hide modal and show game
+                setupModal.style.display = 'none';
+                document.querySelector('.chessboard').style.display = 'grid';
+                document.querySelector('.game-controls').style.display = 'flex';
+                
+                // Start the game
+                startGame();
+            });
+        });
+        
+        // Start the game with selected options
+        function startGame() {
+            console.log("Starting game with player as", playerColor);
+            // Reset the game
+            game = new Chess();
+            selectedSquare = null;
+            
+            // Create the board
+            createBoard();
+            
+            // If player chose black, let computer (white) make first move
+            if (playerColor === 'black') {
+                console.log("Player is black, computer (white) goes first");
+                isComputerTurn = true;
+                setTimeout(makeComputerMove, 500);
+            }
+        }
+
+        // Create the chessboard
+        function createBoard() {
+            const chessboard = document.querySelector('.chessboard');
+            chessboard.innerHTML = '';
+
+            for (let row = 0; row < 8; row++) {
+                for (let col = 0; col < 8; col++) {
+                    const square = document.createElement('div');
+                    square.className = `chess-square ${(row + col) % 2 === 0 ? 'square-light' : 'square-dark'}`;
+                    square.setAttribute('data-square', `${String.fromCharCode(97 + col)}${8 - row}`);
+                    square.addEventListener('click', handleSquareClick);
+                    chessboard.appendChild(square);
+                }
+            }
+            
+            updateBoard();
+        }
+
+        // Update the board display
+        function updateBoard() {
+            const position = game.board();
+            const squares = document.querySelectorAll('.chess-square');
+            
+            squares.forEach(square => {
+                square.textContent = '';
+                square.removeAttribute('data-piece-color');
+            });
+
+            for (let row = 0; row < 8; row++) {
+                for (let col = 0; col < 8; col++) {
+                    const piece = position[row][col];
+                    if (piece) {
+                        const square = document.querySelector(`[data-square="${String.fromCharCode(97 + col)}${8 - row}"]`);
+                        square.textContent = getPieceSymbol(piece);
+                        // Add the piece color as a data attribute
+                        square.setAttribute('data-piece-color', piece.color);
+                    }
+                }
+            }
+        }
+
+        // Get Unicode chess piece symbol
+        function getPieceSymbol(piece) {
+            const symbols = {
+                'p': '♟', // black pawn
+                'n': '♞', // black knight
+                'b': '♝', // black bishop
+                'r': '♜', // black rook
+                'q': '♛', // black queen
+                'k': '♚', // black king
+                'P': '♙', // white pawn
+                'N': '♘', // white knight
+                'B': '♗', // white bishop
+                'R': '♖', // white rook
+                'Q': '♕', // white queen
+                'K': '♔'  // white king
+            };
+            return symbols[piece.type];
+        }
+
+        // Handle square clicks
+        function handleSquareClick(event) {
+            // Don't allow moves if it's computer's turn
+            if (isComputerTurn) {
+                console.log("It's computer's turn, player can't move");
+                return;
+            }
+            
+            const square = event.target;
+            const position = square.getAttribute('data-square');
+            const piece = game.get(position);
+            
+            // Only allow player to move their own color
+            const playerTurn = game.turn() === 'w' ? 'white' : 'black';
+            if (playerTurn !== playerColor) {
+                console.log("Not player's turn color");
+                return;
+            }
+
+            // If we have a selected square and click on a legal move square
+            if (selectedSquare) {
+                const move = game.move({
+                    from: selectedSquare,
+                    to: position,
+                    promotion: 'q'
+                });
+
+                if (move) {
+                    console.log("Player moved:", move);
+                    updateBoard();
+                    // Clear ALL selections and indicators immediately after move
+                    clearSelections();
+                    
+                    // Check for game over
+                    if (game.isGameOver()) {
+                        if (game.isCheckmate()) {
+                            alert('Checkmate! You win!');
+                        } else if (game.isDraw()) {
+                            alert('Draw!');
+                        }
+                    } else {
+                        // If game is not over, let computer make a move
+                        console.log("Setting computer's turn to true");
+                        isComputerTurn = true;
+                        setTimeout(function() {
+                            console.log("Calling makeComputerMove");
+                            makeComputerMove();
+                        }, 500); // Delay for better UX
+                    }
+                } else {
+                    // If invalid move, check if clicking on a new piece of current player's color
+                    if (piece && piece.color === (game.turn() === 'w' ? 'w' : 'b')) {
+                        clearSelections();
+                        selectedSquare = position;
+                        square.classList.add('selected');
+                        showLegalMoves(position);
+                    } else {
+                        clearSelections();
+                    }
+                }
+                return;
+            }
+
+            // If clicking on a piece of the current player's color
+            if (piece && piece.color === (game.turn() === 'w' ? 'w' : 'b')) {
+                clearSelections();
+                selectedSquare = position;
+                square.classList.add('selected');
+                showLegalMoves(position);
+            }
+        }
+
+        // Helper function to clear selections and indicators
+        function clearSelections() {
+            document.querySelectorAll('.chess-square').forEach(sq => {
+                sq.classList.remove('selected', 'legal-move');
+            });
+            selectedSquare = null;
+        }
+
+        // Helper function to show legal moves
+        function showLegalMoves(position) {
+            const moves = game.moves({ square: position, verbose: true });
+            moves.forEach(move => {
+                const targetSquare = document.querySelector(`[data-square="${move.to}"]`);
+                if (targetSquare) {
+                    targetSquare.classList.add('legal-move');
+                }
+            });
+        }
+
+        // Undo last move
+        function undoMove() {
+            game.undo();
+            updateBoard();
+            selectedSquare = null;
+        }
+
+        // Make a computer move
+        function makeComputerMove() {
+            console.log("makeComputerMove called, isComputerTurn =", isComputerTurn);
+            
+            if (game.isGameOver()) {
+                console.log("Game is over, computer won't move");
+                isComputerTurn = false;
+                return;
+            }
+            
+            console.log("Computer is thinking...");
+            const move = getBestMove(game, computerLevel);
+            console.log("Computer chose move:", move);
+            
+            if (!move) {
+                console.error("No move found for computer!");
+                isComputerTurn = false;
+                return;
+            }
+            
+            game.move(move);
+            updateBoard();
+            
+            if (game.isGameOver()) {
+                if (game.isCheckmate()) {
+                    alert('Checkmate! Computer wins!');
+                } else if (game.isDraw()) {
+                    alert('Draw!');
+                }
+            }
+            
+            console.log("Computer's turn finished");
+            isComputerTurn = false;
+        }
+        
+        // Get the best move for the computer based on difficulty
+        function getBestMove(game, depth) {
+            console.log("getBestMove called with depth", depth);
+            const possibleMoves = game.moves();
+            console.log("Possible moves:", possibleMoves);
+            
+            // If no moves available
+            if (possibleMoves.length === 0) {
+                console.log("No moves available");
+                return null;
+            }
+            
+            // For easy level, just make a random move
+            if (depth === 1) {
+                const randomIndex = Math.floor(Math.random() * possibleMoves.length);
+                console.log("Easy mode - random move:", possibleMoves[randomIndex]);
+                return possibleMoves[randomIndex];
+            }
+            
+            let bestMove = null;
+            let bestValue = -Infinity;
+            
+            // For each possible move
+            for (let i = 0; i < possibleMoves.length; i++) {
+                const move = possibleMoves[i];
+                
+                // Make the move
+                game.move(move);
+                
+                // Evaluate the position
+                const value = -evaluatePosition(game, depth - 1);
+                
+                // Undo the move
+                game.undo();
+                
+                console.log(`Move: ${move}, Value: ${value}`);
+                
+                // Update best move if better
+                if (value > bestValue) {
+                    bestValue = value;
+                    bestMove = move;
+                }
+            }
+            
+            console.log("Best move found:", bestMove, "with value", bestValue);
+            return bestMove;
+        }
+        
+        // Simple position evaluation function
+        function evaluatePosition(game, depth) {
+            // If game is over
+            if (game.isCheckmate()) return -1000; // Checkmate is bad
+            if (game.isDraw()) return 0; // Draw is neutral
+            
+            // If we've reached max depth
+            if (depth === 0) {
+                return calculateBoardValue(game.board());
+            }
+            
+            const possibleMoves = game.moves();
+            let bestValue = -Infinity;
+            
+            // For each possible move
+            for (let i = 0; i < possibleMoves.length; i++) {
+                const move = possibleMoves[i];
+                
+                // Make the move
+                game.move(move);
+                
+                // Evaluate the position
+                const value = -evaluatePosition(game, depth - 1);
+                
+                // Undo the move
+                game.undo();
+                
+                // Update best value
+                if (value > bestValue) {
+                    bestValue = value;
+                }
+            }
+            
+            return bestValue;
+        }
+        
+        // Calculate the value of the board
+        function calculateBoardValue(board) {
+            const pieceValues = {
+                'p': -1, 'n': -3, 'b': -3, 'r': -5, 'q': -9, 'k': -100,
+                'P': 1, 'N': 3, 'B': 3, 'R': 5, 'Q': 9, 'K': 100
+            };
+            
+            let value = 0;
+            
+            for (let row = 0; row < 8; row++) {
+                for (let col = 0; col < 8; col++) {
+                    const piece = board[row][col];
+                    if (piece) {
+                        value += pieceValues[piece.type];
+                    }
+                }
+            }
+            
+            return value;
+        }
+        
+        // Reset game with new options
+        function resetGame() {
+            // Show setup modal again
+            document.getElementById('gameSetupModal').style.display = 'flex';
+            document.querySelector('.chessboard').style.display = 'none';
+            document.querySelector('.game-controls').style.display = 'none';
+        }
+    </script>
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
